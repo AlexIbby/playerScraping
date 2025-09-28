@@ -217,6 +217,7 @@ def main() -> None:
     scored = compute(merged)
     cols = [
         "name_full",
+        "IronMan_Rank",
         "team",
         "pos",
         "ADP",
@@ -228,7 +229,6 @@ def main() -> None:
         "Durability_Penalty",
         "Seasons_Used",
         "IronMan_Score",
-        "IronMan_Rank",
         "DurabilityZ",
         "MinutesZ",
         "ValueZ",

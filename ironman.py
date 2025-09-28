@@ -2,6 +2,10 @@ import numpy as np
 import pandas as pd
 
 
+MIN_GAMES_FULL_WEIGHT = 40
+MIN_MINUTES_FULL_WEIGHT = 500
+
+
 def z(series: pd.Series) -> pd.Series:
     s = pd.to_numeric(series, errors="coerce")
     mean = s.mean()
@@ -16,6 +20,25 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
     data["GP"] = pd.to_numeric(data["GP"], errors="coerce").fillna(0)
     data["MIN"] = pd.to_numeric(data["MIN"], errors="coerce").fillna(0)
     data["MPG"] = np.where(data["GP"] > 0, data["MIN"] / data["GP"], 0.0)
+
+    per_game_fallbacks = {
+        "PTS_PG": "PTS",
+        "REB_PG": "REB",
+        "AST_PG": "AST",
+        "STL_PG": "STL",
+        "BLK_PG": "BLK",
+        "FG3M_PG": "FG3M",
+        "TOV_PG": "TOV",
+    }
+    for pg_col, total_col in per_game_fallbacks.items():
+        if pg_col not in data.columns:
+            totals = pd.to_numeric(data.get(total_col), errors="coerce").fillna(0.0)
+            data[pg_col] = np.where(data["GP"] > 0, totals / data["GP"], 0.0)
+        else:
+            data[pg_col] = pd.to_numeric(data[pg_col], errors="coerce").fillna(0.0)
+
+    data["FG_PCT"] = pd.to_numeric(data.get("FG_PCT"), errors="coerce").fillna(0.0)
+    data["FT_PCT"] = pd.to_numeric(data.get("FT_PCT"), errors="coerce").fillna(0.0)
 
     data["Weighted_GP"] = pd.to_numeric(data.get("Weighted_GP"), errors="coerce")
     data["GP_Median"] = pd.to_numeric(data.get("GP_Median"), errors="coerce")
@@ -36,12 +59,31 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
         durability_composite.notna(), durability_fallback
     ).fillna(0.0)
 
-    stats = ["PTS", "REB", "AST", "STL", "BLK", "FG3M", "FG_PCT", "FT_PCT"]
-    data["TOV_NEG"] = -data["TOV"]
-    zcols = stats + ["TOV_NEG"]
+    per_game_stats = [
+        "PTS_PG",
+        "REB_PG",
+        "AST_PG",
+        "STL_PG",
+        "BLK_PG",
+        "FG3M_PG",
+        "FG_PCT",
+        "FT_PCT",
+    ]
+    data["TOV_PG_NEG"] = -data["TOV_PG"]
+    zcols = per_game_stats + ["TOV_PG_NEG"]
     for col in zcols:
         data[f"z_{col}"] = z(pd.to_numeric(data[col], errors="coerce").fillna(0))
-    data["ValueZ"] = data[[f"z_{col}" for col in zcols]].mean(axis=1)
+    value_components = [f"z_{col}" for col in per_game_stats] + ["z_TOV_PG_NEG"]
+    data["ValueZ_raw"] = data[value_components].mean(axis=1)
+
+    games_factor = np.clip(
+        np.where(data["GP"] > 0, data["GP"] / MIN_GAMES_FULL_WEIGHT, 0.0), 0.0, 1.0
+    )
+    minutes_factor = np.clip(
+        np.where(data["MIN"] > 0, data["MIN"] / MIN_MINUTES_FULL_WEIGHT, 0.0), 0.0, 1.0
+    )
+    sample_strength = np.maximum(games_factor, minutes_factor)
+    data["ValueZ"] = data["ValueZ_raw"] * sample_strength
 
     data["DurabilityZ"] = z(data["Durability_Composite"])
     data["MinutesZ"] = z(data["MPG"])
@@ -54,10 +96,10 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
         value_vs_adp = pd.Series(0.0, index=data.index)
 
     data["IronMan_Score"] = (
-        0.45 * data["DurabilityZ"]
-        + 0.25 * data["MinutesZ"]
+        0.40 * data["DurabilityZ"]
+        + 0.20 * data["MinutesZ"]
         + 0.30 * data["ValueZ"]
-        + 0.15 * value_vs_adp
+        + 0.10 * value_vs_adp
     )
     data["IronMan_Score"] = data["IronMan_Score"].fillna(0)
     data["IronMan_Rank"] = data["IronMan_Score"].rank(ascending=False, method="min").astype(int)

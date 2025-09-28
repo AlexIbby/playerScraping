@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 
+import numpy as np
 import pandas as pd
 from nba_api.stats.endpoints import leaguedashplayerstats
 
@@ -61,6 +62,15 @@ def pull_totals(seasons: Sequence[str] | str = DEFAULT_SEASON) -> pd.DataFrame:
             frame[col] = pd.NA
         frame = frame[keep].copy()
         frame["SEASON_ID"] = frame["SEASON_ID"].astype(str)
+
+        gp_numeric = pd.to_numeric(frame["GP"], errors="coerce")
+        gp_nonzero = gp_numeric.replace(0, np.nan)
+        per_game_stats = ["PTS", "REB", "AST", "STL", "BLK", "FG3M", "TOV"]
+        for stat in per_game_stats:
+            stat_numeric = pd.to_numeric(frame[stat], errors="coerce")
+            per_game = stat_numeric.div(gp_nonzero)
+            frame[f"{stat}_PG"] = per_game.fillna(0.0)
+
         frames.append(frame)
 
     combined = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
