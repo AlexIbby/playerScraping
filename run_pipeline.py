@@ -249,7 +249,7 @@ def main() -> None:
     ]
     print("Writing results to ironmen_rankings.csv...")
     log.info("Writing rankings CSV to ironmen_rankings.csv")
-    scored[cols].to_csv("ironmen_rankings.csv", index=False)
+    scored[cols].to_csv("ironmen_rankings.csv", index=False, encoding="utf-8-sig")
     print(f"Saved {len(scored)} rows to ironmen_rankings.csv. Run complete!\n")
     log.info("Wrote ironmen_rankings.csv (%d rows)", len(scored))
     log.info("Ironmen pipeline run complete")
