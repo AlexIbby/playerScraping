@@ -29,6 +29,7 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
         "BLK_PG": "BLK",
         "FG3M_PG": "FG3M",
         "TOV_PG": "TOV",
+        "DD2_PG": "DD2",
     }
     for pg_col, total_col in per_game_fallbacks.items():
         if pg_col not in data.columns:
@@ -39,6 +40,8 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
 
     data["FG_PCT"] = pd.to_numeric(data.get("FG_PCT"), errors="coerce").fillna(0.0)
     data["FT_PCT"] = pd.to_numeric(data.get("FT_PCT"), errors="coerce").fillna(0.0)
+    data["FG3_PCT"] = pd.to_numeric(data.get("FG3_PCT"), errors="coerce").fillna(0.0)
+    data["DD2_PG"] = pd.to_numeric(data.get("DD2_PG"), errors="coerce").fillna(0.0)
 
     data["Weighted_GP"] = pd.to_numeric(data.get("Weighted_GP"), errors="coerce")
     data["GP_Median"] = pd.to_numeric(data.get("GP_Median"), errors="coerce")
@@ -70,7 +73,7 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
         "FT_PCT",
     ]
     data["TOV_PG_NEG"] = -data["TOV_PG"]
-    zcols = per_game_stats + ["TOV_PG_NEG"]
+    zcols = per_game_stats + ["FG3_PCT", "TOV_PG_NEG", "DD2_PG"]
     for col in zcols:
         data[f"z_{col}"] = z(pd.to_numeric(data[col], errors="coerce").fillna(0))
     value_components = [f"z_{col}" for col in per_game_stats] + ["z_TOV_PG_NEG"]
@@ -95,6 +98,21 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
     else:
         value_vs_adp = pd.Series(0.0, index=data.index)
 
+    production_metrics = [
+        "PTS_PG",
+        "REB_PG",
+        "AST_PG",
+        "STL_PG",
+        "BLK_PG",
+        "FG3M_PG",
+        "DD2_PG",
+    ]
+    efficiency_metrics = ["FG_PCT", "FT_PCT", "FG3_PCT", "TOV_PG_NEG"]
+    production_cols = [f"z_{metric}" for metric in production_metrics]
+    efficiency_cols = [f"z_{metric}" for metric in efficiency_metrics]
+    data["ProductionZ"] = data[production_cols].mean(axis=1)
+    data["EfficiencyZ"] = data[efficiency_cols].mean(axis=1)
+
     data["IronMan_Score"] = (
         0.40 * data["DurabilityZ"]
         + 0.20 * data["MinutesZ"]
@@ -103,4 +121,12 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
     )
     data["IronMan_Score"] = data["IronMan_Score"].fillna(0)
     data["IronMan_Rank"] = data["IronMan_Score"].rank(ascending=False, method="min").astype(int)
+
+    data["Good_IronMan_Score"] = (
+        0.40 * data["DurabilityZ"] + 0.40 * data["ProductionZ"] + 0.20 * data["EfficiencyZ"]
+    )
+    data["Good_IronMan_Score"] = data["Good_IronMan_Score"].fillna(0.0)
+    data["Good_IronMan_Rank"] = (
+        data["Good_IronMan_Score"].rank(ascending=False, method="min").astype(int)
+    )
     return data.sort_values("IronMan_Rank")

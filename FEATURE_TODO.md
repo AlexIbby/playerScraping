@@ -16,55 +16,25 @@ No further action required unless the weighting philosophy changes.
 
 ---
 
-## Feature 2 – Per-Game Value Recalibration (Priority)
+## Feature 2 – Per-Game Value Recalibration (Completed)
 
-**Goal**: Ensure ValueZ captures per-minute/per-game skill rather than re-counting minutes already captured in durability metrics.
+Shipped alongside the Spring 2025 scoring refresh. Key outcomes:
+- `nba_pull.py` now materializes per-game box-score columns (`PTS_PG`, `REB_PG`, `AST_PG`, `STL_PG`, `BLK_PG`, `FG3M_PG`, `FG_PCT`, `FT_PCT`, `TOV_PG`) on the three-season stack so the production layer works off rates instead of totals.
+- `ironman.py` recalculates `ValueZ` strictly from those per-game z-scores, flips turnovers to negative before scoring, and attenuates the signal for players below 40 GP or 500 minutes to keep microwave scorers from breaking the rankings.
+- The Iron-Man weighting now favors durability (40%) while trimming MinutesZ to 20% and treating ADP as a softer tiebreaker, reflecting that minutes are already baked into availability.
+- Documentation in `AGENT_GUIDE.md` (“Production profile” and “Weighted blend” sections) was updated so future agents understand the per-game pivot and new blend.
 
-**Why**
-- The current pipeline uses totals, so players with heavy minutes get rewarded twice (through raw stats and MinutesZ).
-- Switching ValueZ to per-game averages isolates efficiency/production, leaving DurabilityZ/MinutesZ to model availability.
-
-**Requirements**
-1. Create per-game columns (PTS/G, REB/G, AST/G, etc.) from the multi-season dataset.
-2. Compute z-scores on per-game stats only for ValueZ.
-3. Keep turnover as a negative contribution by multiplying by -1 before z-score.
-4. Reassess weighting between DurabilityZ, MinutesZ, ValueZ, and ADP once the scale shifts; document chosen weights.
-5. If, after experimentation, per-game ValueZ degrades rankings (e.g., favors low-minute specialists too heavily), capture the rationale and keep totals instead. That rationale must be added to `AGENT_GUIDE.md`.
-
-**Implementation Notes**
-- Consider minimum minutes/games filters so per-game rankings aren’t dominated by tiny sample sizes (e.g., require ≥500 minutes or ≥40 GP to be scored, or cap their ValueZ impact).
-- Optionally blend per-game and totals (e.g., 70% per-game + 30% totals) if that produces more intuitive results; validate on historical injury data.
+No further action required unless you revisit the sample dampening thresholds or weight split.
 
 ---
 
-## Feature 3 – "Good Iron-Man" Composite Score & Extended Stats (Priority)
+## Feature 3 – "Good Iron-Man" Composite Score & Extended Stats (Completed)
 
-**Goal**: Add a secondary ranking that highlights players who are both durable and high-impact across key fantasy categories.
-
-**Why**
-- The current Iron-Man score prioritizes availability; decision-makers may also want reassurance that the durable players carry strong production.
-- Surfacing core fantasy categories (PTS, REB, AST, 3PM, 3P%, BLK, STL, TOV, double-doubles) helps downstream consumers act without inspecting external data.
-
-**Requirements**
-1. Pull or compute per-game and multi-season averages for the following categories (use same multi-season dataset from Feature 1):
-   - Points, rebounds, assists, steals, blocks, made threes, three-point percentage, free-throw percentage, turnovers, double-doubles.
-   - For double-doubles, use NBA stats endpoints that expose advanced splits or compute heuristically (count games with ≥10 in two categories).
-   - Hight Turnovers should count as negative as lower is better
-2. Normalize each stat to z-scores (ensure turnovers remain negative) using multi-season averages.
-3. Construct a "Good Iron-Man Score" (`GI_Score`) combining:
-   - Iron-Man availability score (possibly the output from Feature 1).
-   - Offensive/defensive production weights (e.g., 40% durability, 40% production, 20% efficiency; adjust after testing).
-   - Document the formula and reasoning within `ironman.py` and `AGENT_GUIDE.md`.
-4. Add new columns to the output CSV:
-   - Raw per-game stats for each category above.
-   - `Good_IronMan_Score` and `Good_IronMan_Rank`.
-   - Keep existing `IronMan_Score`/`IronMan_Rank` for backward compatibility.
-5. Update downstream documentation and any consumers to explain the difference between pure Iron-Man and Good Iron-Man rankings.
-
-**Implementation Notes**
-- Review NBA API rate limits; gathering double-double counts may require game logs.
-- If a full double-double count proves too heavy, approximate using season totals (e.g., track how many categories average near 10+) or mark as stretch goal.
-- Provide sample players illustrating how rankings shift with the new composite metric to validate usefulness.
+Shipped April 2025. Key outcomes:
+- `nba_pull.py` now retains three-point percentage and double-double totals from `LeagueDashPlayerStats`, deriving per-game rates so the multi-season stack captures the full fantasy profile.
+- `ironman.py` extends the z-score suite to cover turnovers (negative), shooting splits, and double-double rate, then builds `ProductionZ`, `EfficiencyZ`, and the weighted `Good_IronMan_Score` (40% durability, 40% production, 20% efficiency). Rankings surface as `Good_IronMan_Rank` alongside the legacy Iron-Man view.
+- `ironmen_rankings.csv` expands to include the new score/rank plus per-game columns for PTS, REB, AST, STL, BLK, 3PM, 3P%, FT%, TOV, and DD2 so downstream consumers have actionable box-score context without additional lookups.
+- Documentation in `AGENT_GUIDE.md` now explains the Good/Skilled Iron-Man blend, column additions, and how the new composite complements the availability-first ranking.
 
 ---
 

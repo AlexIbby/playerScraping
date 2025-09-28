@@ -10,18 +10,19 @@
 2. **Discover game context**: `run_pipeline.py` resolves the active Yahoo NBA game key at runtime.
 3. **Player inventory**: Paginate `/game/{game_key}/players` to capture every player’s key, name, team, and positions.
 4. **Draft analysis**: Batch `/players;player_keys=.../draft_analysis` requests (≤20 keys per call) to pull preseason ADP and auction averages.
-5. **NBA stats**: Pull a three-season stack of regular-season totals from `nba_api`, derive per-game rates for the key box-score stats, keep a recency flag per season, and fuzzy match the latest campaign back to Yahoo players.
-6. **Scoring**: `ironman.py` computes z-scores, blends durability/minutes/value/ADP, and ranks the result set.
+5. **NBA stats**: Pull a three-season stack of regular-season totals from `nba_api`, derive per-game rates for the key box-score stats (including 3PM, 3P%, FT%, turnovers, and double-double rate), keep a recency flag per season, and fuzzy match the latest campaign back to Yahoo players.
+6. **Scoring**: `ironman.py` computes z-scores, blends durability/minutes/value/ADP, and now builds both the traditional Iron-Man ranking and the expanded Good (a.k.a. Skilled) Iron-Man composite before ranking each view.
 7. **Output**: Save `ironmen_rankings.csv`; log HTTP activity in `adp_pipeline.log` for auditing.
 
 ## Iron-Man Score Methodology
 - **Data prep**: Convert GP/MIN to numeric, fill gaps with zero, and derive `MPG = MIN / GP` so players with limited appearances don’t receive inflated playing-time credit.
-- **Production profile**: Normalize per-game rates (`PTS_PG`, `REB_PG`, `AST_PG`, `STL_PG`, `BLK_PG`, `FG3M_PG`) alongside shooting efficiency (`FG_PCT`, `FT_PCT`). Turnovers are first converted to per-game (`TOV_PG`) and multiplied by `-1` so giveaways lower a player’s value. Missing or zero-variance columns fall back to zero-centered z-scores to keep the blend stable.
-- **ValueZ**: Average the per-game z-scores and apply a sample-strength cap so players who failed to reach either 40 GP or 500 minutes have their production signal proportionally reduced. This keeps small-sample specialists from outkicking their availability-based peers.
+- **Production profile**: Normalize per-game rates (`PTS_PG`, `REB_PG`, `AST_PG`, `STL_PG`, `BLK_PG`, `FG3M_PG`, `DD2_PG`) alongside shooting efficiency (`FG3_PCT`, `FG_PCT`, `FT_PCT`). Turnovers are first converted to per-game (`TOV_PG`) and multiplied by `-1` so giveaways lower a player’s value. Missing or zero-variance columns fall back to zero-centered z-scores to keep the blend stable.
+- **ValueZ**: Average the core per-game z-scores and apply a sample-strength cap so players who failed to reach either 40 GP or 500 minutes have their production signal proportionally reduced. This keeps small-sample specialists from outkicking their availability-based peers.
 - **Availability & minutes**: Build a durability composite upstream by blending recency-weighted Games Played (60/30/10 over the last three seasons) with the multi-season median and subtracting a variance-driven penalty (`0.05 * variance`). The composite is z-scored into `DurabilityZ`, while `MPG` is still z-scored into `MinutesZ` to represent role security. When historical data is missing, the pipeline falls back to the most recent season’s GP so players without history don’t collapse the metric.
 - **ADP context**: When Yahoo ADP exists, invert it (`ADP_INV = -ADP`) and z-score (`ADPz`). Subtracting `ADPz` from `ValueZ` creates a “value vs cost” lever that pushes up productive players who are still draftable at a discount; if ADP is missing, the lever is neutral.
 - **Weighted blend**: `IronMan_Score = 0.40*DurabilityZ + 0.20*MinutesZ + 0.30*ValueZ + 0.10*(ValueZ - ADPz)`. The lighter Minutes/ADP weights reflect the move to per-game production—durability still anchors the score (40%), ValueZ captures efficiency and skill independent of minutes (30%), and ADP remains a softer tiebreaker (10%). NaNs are coerced to zero so absent data doesn’t tank the ranking.
-- **Ranking**: Sort descending by `IronMan_Score` and assign dense ranks (`IronMan_Rank`). This keeps ties aligned and exposes the top durable/value hybrid targets.
+- **Good/Skilled Iron-Man score**: A second composite (`Good_IronMan_Score`) keeps durability at 40% while layering 40% production (`PTS/REB/AST/STL/BLK/3PM/DD2` blend) and 20% efficiency (`FG%`, `FT%`, `3P%`, turnovers as negative). This highlights durable players who also drive core fantasy stats. Scores are z-scored components averaged per bucket before weighting.
+- **Ranking**: Sort descending by `IronMan_Score` and assign dense ranks (`IronMan_Rank`); repeat for the good/skilled composite to expose the alternate view via `Good_IronMan_Rank`.
 
 ## File Tree & Responsibilities
 - `run_pipeline.py` – orchestrates the end-to-end flow (Yahoo discovery, ADP fetch, NBA merge, scoring, CSV export).
@@ -50,7 +51,7 @@ python run_pipeline.py
 - Requires active internet access to Yahoo and NBA endpoints.
 - Saves `payload_game_players_start_{N}.json` snapshots; remove if disk usage becomes an issue.
 - `ironmen_rankings.csv` contains columns:
-  - `name_full`, `IronMan_Rank`, `team`, `pos`, `ADP`, `GP`, `MIN`, `Weighted_GP`, `GP_Median`, `Durability_Composite`, `Durability_Penalty`, `Seasons_Used`, `IronMan_Score`, `DurabilityZ`, `MinutesZ`, `ValueZ`.
+  - `name_full`, `IronMan_Rank`, `Good_IronMan_Rank`, `team`, `pos`, `ADP`, `Good_IronMan_Score`, `IronMan_Score`, `DurabilityZ`, `ProductionZ`, `EfficiencyZ`, `MinutesZ`, `ValueZ`, `GP`, `MIN`, `Weighted_GP`, `GP_Median`, `Durability_Composite`, `Durability_Penalty`, `Seasons_Used`, `PTS_PG`, `REB_PG`, `AST_PG`, `STL_PG`, `BLK_PG`, `FG3M_PG`, `FG3_PCT`, `FT_PCT`, `TOV_PG`, `DD2_PG`.
 
 ## Implementation Notes
 - **Yahoo pagination**: 25 players per request; stop when the API returns zero items.

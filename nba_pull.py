@@ -49,8 +49,10 @@ def pull_totals(seasons: Sequence[str] | str = DEFAULT_SEASON) -> pd.DataFrame:
             "BLK",
             "TOV",
             "FG_PCT",
+            "FG3_PCT",
             "FT_PCT",
             "FG3M",
+            "DD2",
         ]
         frame = df.copy()
         if "SEASON_ID" not in frame.columns:
@@ -70,6 +72,19 @@ def pull_totals(seasons: Sequence[str] | str = DEFAULT_SEASON) -> pd.DataFrame:
             stat_numeric = pd.to_numeric(frame[stat], errors="coerce")
             per_game = stat_numeric.div(gp_nonzero)
             frame[f"{stat}_PG"] = per_game.fillna(0.0)
+
+        if "DD2" in frame.columns:
+            dd2_numeric = pd.to_numeric(frame["DD2"], errors="coerce")
+            frame["DD2"] = dd2_numeric.fillna(0.0)
+            dd2_per_game = dd2_numeric.div(gp_nonzero)
+            frame["DD2_PG"] = dd2_per_game.fillna(0.0)
+        else:
+            frame["DD2"] = 0.0
+            frame["DD2_PG"] = 0.0
+
+        frame["FG3_PCT"] = (
+            pd.to_numeric(frame.get("FG3_PCT"), errors="coerce").fillna(0.0)
+        )
 
         frames.append(frame)
 
