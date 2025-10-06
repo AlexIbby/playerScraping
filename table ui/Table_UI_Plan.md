@@ -9,21 +9,22 @@
 
 ## Current Status
 - Desktop table experience is functional with live CSV load, filtering, column sorting, tier highlighting, per-row deletion, and undo.
-- Summary bar now reflects active filters/sort order through chips and exposes undo/reset controls.
+- Summary bar reflects active filters/sort order through chips and exposes undo/reset controls.
 - Expandable detail drawer surfaces deeper metrics (z-scores, availability, per-game stats) per player; data normalization ensures numeric comparisons.
-- Tooltips, aria attributes, and button semantics have been extended but mobile pattern work is still pending.
+- Mobile breakpoint now ships with a card view, off-canvas filter drawer, and touch-friendly sort controls that mirror desktop behaviour.
 
 ## Completed Work
 - HTML scaffold in `index.html` with header intro, filter sidebar, summary region, table shell, tooltip container, and PapaParse CDN link.
 - Base styling in `styles.css` covering layout grid, sticky header table, tooltip theme, and responsive breakpoints (desktop-first).
 - JavaScript in `app.js` handling CSV load, normalization (including MPG), search/filters, sorting, deletion, undo stack, summary updates, tier highlighting, and tooltip positioning.
 - Detail drawer implementation exposing ranking, score components, availability, and per-game groupings; expansion state is tracked client-side.
+- Mobile experience covering a responsive card layout, off-canvas/slideover filters, overlay dismissal, and synced sort controls.
 - `requirements.txt` generated from the venv and annotated to flag the PapaParse CDN dependency.
 
 - [x] Phase 1 scaffold (HTML shell, responsive layout starter, tooltip infrastructure).
 - [x] Phase 2 data layer (PapaParse wiring, state refinement, undo control).
 - [x] Phase 3 interactions (sorting/filter polish, deletion undo, rank toggle styling, tier highlighting, detail drawer).
-- [ ] Phase 4 responsive polish (mobile cards, off-canvas filters).
+- [x] Phase 4 responsive polish (mobile cards, off-canvas filters, mobile sort/reset control pass).
 - [ ] Phase 5 validation (cross-browser checks, content QA).
 
 ## Recent Implementation Notes
@@ -45,15 +46,11 @@ table ui/
 ```
 
 ## Next Steps for Handoff
-- Phase 4: design and implement mobile breakpoint experience (card layout, off-canvas/slideover filters, floating sort/reset controls, tap-friendly tooltips).
-- Ensure expandable detail drawer adapts gracefully on small screens (accordion, collapsed sections, or stacked metrics).
-- Evaluate persistence options (e.g., `localStorage`) if session continuity is desired; currently state resets on reload per spec.
-- Phase 5: accessibility and QA sweep—keyboard navigation, focus states for new controls, contrast checks, and smoke-testing in multiple browsers.
-- Document run instructions (e.g., `python -m http.server`) and any known limitations in README or plan before final handoff.
-- Add contextual “info” affordances on key columns (either hover tooltip or inline icon) so users understand each metric at a glance.
-- Clarify GP/MPG labels in the UI to indicate season totals vs. per-game averages.
-- Ensure rank-basis toggle and any badges referencing it surface explanatory copy on hover/tap.
-- Update the primary score column label to "Iron Man Ranking" to better communicate what the number represents.
+- UX copy + affordance polish: clarify GP/MPG labels, rename the primary score column per product language, and add inline helper text for the rank-basis toggle and tier badges so users understand the metrics at a glance.
+- Touch-friendly info: validate tooltip behaviour on mobile/touch, converting key hover tooltips into tap-triggered info icons or inline helper copy where needed.
+- Documentation: update README or plan with run instructions (e.g., `python -m http.server`), reset expectations, and note the mobile drawer behaviour for QA.
+- Persistence follow-up: evaluate storing filter/rank basis selections via `localStorage` once the UX copy changes land and QA signs off.
+- Phase 5 accessibility & QA sweep—keyboard navigation (including the filter drawer, mobile sort controls, and card toggles), focus states, contrast checks, and smoke-testing in Chrome, Firefox, Safari, and Edge.
 
 ## Data Model Assumptions
 - Source: `ironmen_rankings.csv` in repo root; columns include `name_full`, `IronMan_Rank`, `Good_IronMan_Rank`, `team`, `pos`, `ADP`, scoring components (`IronMan_Score`, `Good_IronMan_Score`, `DurabilityZ`, `ProductionZ`, `EfficiencyZ`, `MinutesZ`, `ValueZ`), availability stats (`GP`, `Minutes`, `Weighted_GP`, `GP_Median`, `Durability_Composite`, `Durability_Penalty`, `Seasons_Used`), and per-game box score rates.
@@ -159,12 +156,11 @@ table ui/
 
 
 ## Next Steps
-1. Finalize data flow: ensure undo stack UI, refine sort order logic (keep basis rank stable), surface alternate rank in row details, and enrich column metadata for tooltip text.
-2. Interaction polish: add undo button, empty-state callouts, sort indicators for numeric columns, and keyboard focus states for filter controls.
-3. Responsive/mobile: introduce card layout below 768px, off-canvas filters, and ensure tooltips convert to tap-friendly info icons on touch devices.
-4. Accessibility/testing: verify ARIA roles, check contrast, run through keyboard-only workflow, and test data fetch via `python -m http.server`.
-5. Documentation: update README or plan with run instructions and known limitations before handoff/commit.
-6. Context cues: finalize column tooltips/info icons, GP/MPG labeling, rank basis explanation, and refresh the score column language.
+1. Context cues: finalize column tooltips/info icons, GP/MPG labelling, rank-basis explanation, and refresh the score column language to match product copy.
+2. Touch optimisations: ensure tooltip content is reachable on mobile/touch, introducing tap-friendly info icons or inline helper text.
+3. Documentation: capture run/reset instructions and mobile drawer guidance in README or this plan.
+4. Persistence follow-up: explore `localStorage` for filters/rank basis once UX polish is approved.
+5. Accessibility/testing: verify ARIA roles, contrast, and full keyboard workflow (drawer open/close, card toggles), then smoke-test in Chrome, Firefox, Safari, and Edge.
 
 ## Deliverables
 - `table ui/index.html`, `table ui/styles.css`, `table ui/app.js` implementing the plan above, including an introductory paragraph explaining the table’s purpose and interactions in plain language.
