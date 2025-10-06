@@ -41,8 +41,9 @@ const NUMERIC_FIELDS = [
   "FT_PCT",
   "TOV_PG",
   "DD2_PG",
-  "ADP",
 ];
+
+const NUMERIC_SORT_KEYS = new Set(["currentScore", "GP", "MPG", "ADP"]);
 
 const MOBILE_MEDIA =
   typeof window !== "undefined" && typeof window.matchMedia === "function"
@@ -280,6 +281,10 @@ function normalizeRow(row, index) {
     }
   });
 
+  const hasAdp = row.ADP !== undefined && row.ADP !== null && String(row.ADP).trim() !== "";
+  normalized.ADP = hasAdp ? coerceNumber(row.ADP) : null;
+  normalized.hasAdp = hasAdp;
+
   const gp = coerceNumber(row.GP);
   const minutes = coerceNumber(row.MIN);
   const mpg = gp > 0 ? +(minutes / gp).toFixed(1) : 0;
@@ -321,7 +326,12 @@ function setSelectOptions(select, options) {
     option.textContent = value;
     fragment.appendChild(option);
   });
-  select.replaceChildren(fragment);
+  if (typeof select.replaceChildren === "function") {
+    select.replaceChildren(fragment);
+  } else {
+    select.innerHTML = "";
+    select.appendChild(fragment);
+  }
 }
 
 function recompute() {
@@ -375,23 +385,28 @@ function relabelRanks(players) {
 
 function applySort(players) {
   const { key, direction } = state.sort;
-  const sorted = [...players].sort((a, b) => compareByKey(a, b, key));
-  return direction === "desc" ? sorted.reverse() : sorted;
+  return [...players].sort((a, b) => compareByKey(a, b, key, direction));
 }
 
-function compareByKey(a, b, key) {
+function compareByKey(a, b, key, direction = "asc") {
   if (key === "displayRank") {
-    return a.displayRank - b.displayRank;
+    return direction === "desc" ? b.displayRank - a.displayRank : a.displayRank - b.displayRank;
   }
 
-  const valueA = a[key];
-  const valueB = b[key];
-
-  if (isNumber(valueA) && isNumber(valueB)) {
-    return valueA - valueB;
+  if (NUMERIC_SORT_KEYS.has(key)) {
+    const valueA = toComparableNumber(a[key], direction);
+    const valueB = toComparableNumber(b[key], direction);
+    return direction === "desc" ? valueB - valueA : valueA - valueB;
   }
 
-  return String(valueA ?? "").localeCompare(String(valueB ?? ""));
+  const valueA = String(a[key] ?? "").toLowerCase();
+  const valueB = String(b[key] ?? "").toLowerCase();
+  return direction === "desc" ? valueB.localeCompare(valueA) : valueA.localeCompare(valueB);
+}
+
+function toComparableNumber(value, direction) {
+  if (isNumber(value)) return value;
+  return direction === "desc" ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY;
 }
 
 function render() {
@@ -427,6 +442,7 @@ function renderTable() {
       const badge = tierLabel ? `<span class="tier-badge">${tierLabel}</span>` : "";
       const expandLabel = isExpanded ? "Hide" : "Details";
       const detailRow = renderDetailRow(player, tierClass, detailRowId, isExpanded);
+      const adpDisplay = player.hasAdp ? formatNumber(player.ADP, 1) : "N/A";
 
       return `
         <tr${rowClass}>
@@ -445,11 +461,11 @@ function renderTable() {
           <td>${formatNumber(player.currentScore)}</td>
           <td>${player.GP}</td>
           <td>${formatNumber(player.MPG, 1)}</td>
-          <td>${formatNumber(player.ADP, 1)}</td>
+          <td>${adpDisplay}</td>
           <td class="actions">
             <div class="action-buttons">
               <button class="btn-secondary expand-btn" type="button" data-id="${player.id}" aria-expanded="${isExpanded ? "true" : "false"}" aria-controls="${detailRowId}">${expandLabel}</button>
-              <button class="delete-btn" type="button" data-id="${player.id}" aria-label="Remove ${player.name_full} from table">Delete</button>
+              <button class="delete-btn" type="button" data-id="${player.id}" aria-label="Remove ${player.name_full ?? "this player"} from table">Delete</button>
             </div>
           </td>
         </tr>
@@ -501,7 +517,7 @@ function renderCards() {
       const scoreDisplay = formatNumber(player.currentScore);
       const gpDisplay = formatNumber(player.GP, 0);
       const mpgDisplay = formatNumber(player.MPG, 1);
-      const adpDisplay = formatNumber(player.ADP, 1);
+      const adpDisplay = player.hasAdp ? formatNumber(player.ADP, 1) : "N/A";
       const subtitle = [player.team, player.pos].filter(Boolean).join(" | ");
 
       return `

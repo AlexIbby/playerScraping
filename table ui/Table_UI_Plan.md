@@ -25,7 +25,7 @@
 - [x] Phase 2 data layer (PapaParse wiring, state refinement, undo control).
 - [x] Phase 3 interactions (sorting/filter polish, deletion undo, rank toggle styling, tier highlighting, detail drawer).
 - [x] Phase 4 responsive polish (mobile cards, off-canvas filters, mobile sort/reset control pass).
-- [ ] Phase 5 validation (cross-browser checks, content QA).
+- [x] Phase 5 validation (cross-browser checks, content QA).
 
 ## Recent Implementation Notes
 - Added summary chips (`app.js`, `styles.css`) that render rank basis, sort state, search query, team/position selections, and minimum GP filters; chips update in real time.
@@ -36,6 +36,7 @@
 - Styling additions cover action button layout, detail card grid, chip styling, and hover feedback for destructive actions.
 - PapaParse CDN script now carries the verified SHA-384 hash so browsers with SRI enforcement load it correctly; the mismatch previously blocked parsing and raised `Papa is not defined`.
 - Header sanitiser strips the UTF-8 BOM emitted with the CSV so `name_full` resolves properly and filter options populate.
+- Validation pass hardens ADP handling (`N/A` placeholders, stable sort for missing values) and adds legacy `replaceChildren` fallbacks; see `table ui/QA_REPORT.md` for the checklist.
 
 ## File Overview (table ui/)
 ```
@@ -46,11 +47,11 @@ table ui/
 ```
 
 ## Next Steps for Handoff
-- UX copy + affordance polish: clarify GP/MPG labels, rename the primary score column per product language, and add inline helper text for the rank-basis toggle and tier badges so users understand the metrics at a glance.
-- Touch-friendly info: validate tooltip behaviour on mobile/touch, converting key hover tooltips into tap-triggered info icons or inline helper copy where needed.
-- Documentation: update README or plan with run instructions (e.g., `python -m http.server`), reset expectations, and note the mobile drawer behaviour for QA.
-- Persistence follow-up: evaluate storing filter/rank basis selections via `localStorage` once the UX copy changes land and QA signs off.
-- Phase 5 accessibility & QA sweep—keyboard navigation (including the filter drawer, mobile sort controls, and card toggles), focus states, contrast checks, and smoke-testing in Chrome, Firefox, Safari, and Edge.
+- [ ] UX copy + affordance polish: clarify GP/MPG labels, rename the primary score column per product language, and add inline helper text for the rank-basis toggle and tier badges so users understand the metrics at a glance.
+- [ ] Touch-friendly info: validate tooltip behaviour on mobile/touch, converting key hover tooltips into tap-triggered info icons or inline helper copy where needed.
+- [ ] Documentation: propagate run instructions from `QA_REPORT.md` into README once copy polish lands.
+- [ ] Persistence follow-up: evaluate storing filter/rank basis selections via `localStorage` once the UX copy changes land and QA signs off.
+- [ ] Accessibility follow-up: full keyboard navigation audit (drawer toggles, detail buttons), focus styling, and assistive technology smoke tests across Chrome, Firefox, Safari, and Edge.
 
 ## Data Model Assumptions
 - Source: `ironmen_rankings.csv` in repo root; columns include `name_full`, `IronMan_Rank`, `Good_IronMan_Rank`, `team`, `pos`, `ADP`, scoring components (`IronMan_Score`, `Good_IronMan_Score`, `DurabilityZ`, `ProductionZ`, `EfficiencyZ`, `MinutesZ`, `ValueZ`), availability stats (`GP`, `Minutes`, `Weighted_GP`, `GP_Median`, `Durability_Composite`, `Durability_Penalty`, `Seasons_Used`), and per-game box score rates.
