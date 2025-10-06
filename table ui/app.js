@@ -44,6 +44,11 @@ const NUMERIC_FIELDS = [
   "ADP",
 ];
 
+const MOBILE_MEDIA =
+  typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia("(max-width: 768px)")
+    : null;
+
 const state = {
   players: [],
   visiblePlayers: [],
@@ -57,6 +62,7 @@ const state = {
   rankBasis: "goodIronman",
   removedStack: [],
   expanded: new Set(),
+  isMobile: MOBILE_MEDIA ? MOBILE_MEDIA.matches : false,
 };
 
 const elements = {
@@ -64,6 +70,7 @@ const elements = {
   summaryChips: document.getElementById("summary-chips"),
   tableBody: document.querySelector("#player-table tbody"),
   tableHeaders: Array.from(document.querySelectorAll("#player-table thead th")),
+  cardList: document.getElementById("card-list"),
   searchInput: document.getElementById("search-input"),
   teamFilter: document.getElementById("team-filter"),
   positionFilter: document.getElementById("position-filter"),
@@ -73,6 +80,12 @@ const elements = {
   resetButton: document.getElementById("reset-filters"),
   undoButton: document.getElementById("undo-remove"),
   tooltip: document.getElementById("tooltip"),
+  filtersDrawer: document.getElementById("filters-drawer"),
+  mobileFilterToggle: document.getElementById("mobile-filter-toggle"),
+  closeFilters: document.getElementById("close-filters"),
+  drawerOverlay: document.getElementById("drawer-overlay"),
+  mobileSortSelect: document.getElementById("mobile-sort-select"),
+  mobileSortDirection: document.getElementById("mobile-sort-direction"),
 };
 
 document.addEventListener("DOMContentLoaded", init);
@@ -130,6 +143,106 @@ function bindEvents() {
   document.addEventListener("mousemove", handleTooltipMove);
   document.addEventListener("mouseover", handleTooltipShow);
   document.addEventListener("mouseout", handleTooltipHide);
+
+  elements.mobileFilterToggle?.addEventListener("click", () => {
+    toggleFilterDrawer();
+  });
+
+  elements.closeFilters?.addEventListener("click", () => {
+    closeFilterDrawer();
+  });
+
+  elements.drawerOverlay?.addEventListener("click", () => {
+    closeFilterDrawer({ skipFocus: true });
+  });
+
+  elements.mobileSortSelect?.addEventListener("change", handleMobileSortChange);
+
+  elements.mobileSortDirection?.addEventListener("click", handleMobileSortDirection);
+
+  document.addEventListener("keydown", handleGlobalKeydown);
+
+  if (MOBILE_MEDIA) {
+    const handleChange = (event) => handleViewportChange(event.matches);
+    if (typeof MOBILE_MEDIA.addEventListener === "function") {
+      MOBILE_MEDIA.addEventListener("change", handleChange);
+    } else if (typeof MOBILE_MEDIA.addListener === "function") {
+      MOBILE_MEDIA.addListener(handleChange);
+    }
+    handleViewportChange(MOBILE_MEDIA.matches);
+  } else {
+    handleViewportChange(false);
+  }
+}
+
+function handleViewportChange(isMobile) {
+  state.isMobile = Boolean(isMobile);
+  if (!state.isMobile) {
+    closeFilterDrawer({ skipFocus: true, immediate: true });
+  }
+  syncMobileSortControls();
+  if (state.players.length > 0) {
+    render();
+  }
+}
+
+function toggleFilterDrawer() {
+  if (!state.isMobile || !elements.filtersDrawer) return;
+  if (elements.filtersDrawer.classList.contains("is-open")) {
+    closeFilterDrawer();
+  } else {
+    openFilterDrawer();
+  }
+}
+
+function openFilterDrawer() {
+  if (!state.isMobile || !elements.filtersDrawer) return;
+  elements.filtersDrawer.classList.add("is-open");
+  document.body.classList.add("drawer-open");
+  if (elements.mobileFilterToggle) {
+    elements.mobileFilterToggle.setAttribute("aria-expanded", "true");
+  }
+  if (elements.drawerOverlay) {
+    elements.drawerOverlay.hidden = false;
+    elements.drawerOverlay.classList.add("is-active");
+  }
+}
+
+function closeFilterDrawer({ skipFocus = false, immediate = false } = {}) {
+  if (!elements.filtersDrawer) return;
+  elements.filtersDrawer.classList.remove("is-open");
+  document.body.classList.remove("drawer-open");
+  if (elements.mobileFilterToggle) {
+    elements.mobileFilterToggle.setAttribute("aria-expanded", "false");
+    if (!skipFocus && !immediate) {
+      elements.mobileFilterToggle.focus();
+    }
+  }
+  if (elements.drawerOverlay) {
+    elements.drawerOverlay.classList.remove("is-active");
+    elements.drawerOverlay.hidden = true;
+  }
+}
+
+function handleGlobalKeydown(event) {
+  if (event.key === "Escape" && state.isMobile && elements.filtersDrawer?.classList.contains("is-open")) {
+    closeFilterDrawer({ skipFocus: true });
+  }
+}
+
+function handleMobileSortChange(event) {
+  const key = event.target.value;
+  if (!key) return;
+  if (state.sort.key === key) return;
+  const defaultDirection = key === "displayRank" || key === "name_full" ? "asc" : "desc";
+  state.sort = { key, direction: defaultDirection };
+  recompute();
+}
+
+function handleMobileSortDirection() {
+  const nextDirection = state.sort.direction === "asc" ? "desc" : "asc";
+  state.sort.direction = nextDirection;
+  recompute();
 }
 
 async function loadData() {
@@ -284,7 +397,9 @@ function compareByKey(a, b, key) {
 function render() {
   renderSummary();
   renderTable();
+  renderCards();
   updateSortIndicators();
+  syncMobileSortControls();
 }
 
 function renderSummary() {
@@ -349,6 +464,128 @@ function renderTable() {
   elements.tableBody.querySelectorAll(".expand-btn").forEach((button) => {
     button.addEventListener("click", () => toggleExpanded(button.dataset.id));
   });
+}
+
+function renderCards() {
+  if (!elements.cardList) return;
+  if (!state.isMobile) {
+    elements.cardList.hidden = true;
+    elements.cardList.innerHTML = "";
+    return;
+  }
+
+  if (state.visiblePlayers.length === 0) {
+    elements.cardList.hidden = false;
+    elements.cardList.innerHTML = '<div class="card-empty">No players match the current filters.</div>';
+    return;
+  }
+
+  const cards = state.visiblePlayers
+    .map((player) => {
+      const tierClass = getTierClass(player.displayRank);
+      const tierLabel = getTierLabel(player.displayRank);
+      const cardClasses = ["player-card"];
+      if (tierClass) {
+        tierClass
+          .split(" ")
+          .filter(Boolean)
+          .forEach((className) => {
+            if (className !== "tier") {
+              cardClasses.push(className);
+            }
+          });
+      }
+      const isExpanded = state.expanded.has(player.id);
+      const detailId = `card-detail-${player.id}`;
+      const sections = buildDetailSections(player);
+      const scoreDisplay = formatNumber(player.currentScore);
+      const gpDisplay = formatNumber(player.GP, 0);
+      const mpgDisplay = formatNumber(player.MPG, 1);
+      const adpDisplay = formatNumber(player.ADP, 1);
+      const subtitle = [player.team, player.pos].filter(Boolean).join(" | ");
+
+      return `
+        <article class="${cardClasses.join(" ")}" data-id="${player.id}">
+          <header class="card-header">
+            <div class="card-title">
+              <span class="card-rank">#${player.displayRank}${tierLabel ? ` <span class=\"tier-badge\">${tierLabel}</span>` : ""}</span>
+              <strong>${player.name_full ?? ""}</strong>
+              <span class="card-sub">${subtitle}</span>
+            </div>
+            <span class="card-score">${scoreDisplay}</span>
+          </header>
+          <dl class="card-meta">
+            ${cardMetaItem("Rank", player.displayRank)}
+            ${cardMetaItem("Games", gpDisplay)}
+            ${cardMetaItem("MPG", mpgDisplay)}
+            ${cardMetaItem("ADP", adpDisplay)}
+          </dl>
+          <div class="card-actions">
+            <button class="card-toggle" type="button" data-id="${player.id}" aria-expanded="${isExpanded ? "true" : "false"}" aria-controls="${detailId}">${isExpanded ? "Hide details" : "Show details"}</button>
+            <button class="delete-btn" type="button" data-id="${player.id}" aria-label="Remove ${player.name_full ?? "this player"} from the table">Delete</button>
+          </div>
+          <div class="card-details" id="${detailId}" ${isExpanded ? "" : "hidden"}>
+            <div class="detail-card">
+              <div class="detail-grid">
+                <div class="detail-group">
+                  <h3>Ranking Snapshot</h3>
+                  <dl class="metric-list">
+                    ${sections.ranking}
+                  </dl>
+                </div>
+                <div class="detail-group">
+                  <h3>Score Components</h3>
+                  <dl class="metric-list">
+                    ${sections.score}
+                  </dl>
+                </div>
+                <div class="detail-group">
+                  <h3>Availability</h3>
+                  <dl class="metric-list">
+                    ${sections.availability}
+                  </dl>
+                </div>
+                <div class="detail-group detail-wide">
+                  <h3>Per Game Production</h3>
+                  <dl class="metric-list metric-columns">
+                    ${sections.perGame}
+                  </dl>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>`;
+    })
+    .join("");
+
+  elements.cardList.innerHTML = cards;
+  elements.cardList.hidden = false;
+
+  elements.cardList.querySelectorAll(".delete-btn").forEach((button) => {
+    button.addEventListener("click", () => handleDelete(button.dataset.id));
+  });
+
+  elements.cardList.querySelectorAll(".card-toggle").forEach((button) => {
+    button.addEventListener("click", () => toggleExpanded(button.dataset.id));
+  });
+}
+
+function syncMobileSortControls() {
+  if (!elements.mobileSortSelect || !elements.mobileSortDirection) return;
+  const { key, direction } = state.sort;
+  const options = Array.from(elements.mobileSortSelect.options).map((option) => option.value);
+  if (!options.includes(key)) {
+    elements.mobileSortSelect.value = "displayRank";
+  } else {
+    elements.mobileSortSelect.value = key;
+  }
+  const label = direction === "desc" ? "Desc" : "Asc";
+  elements.mobileSortDirection.dataset.direction = direction;
+  elements.mobileSortDirection.textContent = label;
+  elements.mobileSortDirection.setAttribute(
+    "aria-label",
+    `Toggle sort direction (currently ${label.toLowerCase()})`
+  );
 }
 
 function updateSortIndicators() {
@@ -511,11 +748,7 @@ function getTierLabel(rank) {
   return "";
 }
 
-function renderDetailRow(player, tierClass, detailRowId, isExpanded) {
-  const classes = ["detail-row"];
-  if (tierClass) classes.push(tierClass);
-  const hiddenAttr = isExpanded ? "" : " hidden";
-
+function buildDetailSections(player) {
   const rankingMetrics = [
     detailMetric("Ironman Rank", formatNumber(player.IronMan_Rank, 0)),
     detailMetric("Good Ironman Rank", formatNumber(player.Good_IronMan_Rank, 0)),
@@ -552,6 +785,20 @@ function renderDetailRow(player, tierClass, detailRowId, isExpanded) {
     detailMetric("DD2", formatNumber(player.DD2_PG, 2)),
   ].join("");
 
+  return {
+    ranking: rankingMetrics,
+    score: scoreMetrics,
+    availability: availabilityMetrics,
+    perGame: perGameMetrics,
+  };
+}
+
+function renderDetailRow(player, tierClass, detailRowId, isExpanded) {
+  const classes = ["detail-row"];
+  if (tierClass) classes.push(tierClass);
+  const hiddenAttr = isExpanded ? "" : " hidden";
+  const sections = buildDetailSections(player);
+
   return `
         <tr class="${classes.join(" ")}" id="${detailRowId}" data-detail-for="${player.id}"${hiddenAttr}>
           <td colspan="9">
@@ -560,31 +807,37 @@ function renderDetailRow(player, tierClass, detailRowId, isExpanded) {
                 <div class="detail-group">
                   <h3>Ranking Snapshot</h3>
                   <dl class="metric-list">
-                    ${rankingMetrics}
+                    ${sections.ranking}
                   </dl>
                 </div>
                 <div class="detail-group">
                   <h3>Score Components</h3>
                   <dl class="metric-list">
-                    ${scoreMetrics}
+                    ${sections.score}
                   </dl>
                 </div>
                 <div class="detail-group">
                   <h3>Availability</h3>
                   <dl class="metric-list">
-                    ${availabilityMetrics}
+                    ${sections.availability}
                   </dl>
                 </div>
                 <div class="detail-group detail-wide">
                   <h3>Per Game Production</h3>
                   <dl class="metric-list metric-columns">
-                    ${perGameMetrics}
+                    ${sections.perGame}
                   </dl>
                 </div>
               </div>
             </div>
           </td>
         </tr>`;
+}
+
+function cardMetaItem(label, value) {
+  const cleanValue = value === undefined || value === null || value === "" ? "-" : value;
+  const display = cleanValue === "NaN" ? "-" : cleanValue;
+  return `<div><dt>${label}</dt><dd>${display}</dd></div>`;
 }
 
 function detailMetric(label, value) {

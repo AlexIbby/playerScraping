@@ -15,7 +15,8 @@
     </header>
 
     <section class="layout">
-      <aside class="filters" aria-label="Filters">
+      <aside id="filters-drawer" class="filters" aria-label="Filters">
+        <button id="close-filters" type="button" class="drawer-close" aria-label="Close filters">Close</button>
         <h2>Filters</h2>
         <div class="filter-group" data-tooltip="Filter players by name. Type any part of the player name to match.">
           <label for="search-input">Search Players</label>
@@ -62,6 +63,39 @@
       </aside>
 
       <main class="content">
+        <div class="mobile-toolbar" aria-label="Mobile controls">
+          <button
+            id="mobile-filter-toggle"
+            class="btn-secondary mobile-filter-btn"
+            type="button"
+            aria-expanded="false"
+            aria-controls="filters-drawer"
+          >
+            Filters
+          </button>
+          <div class="mobile-sort" data-tooltip="Choose how players are ordered on small screens.">
+            <label class="visually-hidden" for="mobile-sort-select">Sort players</label>
+            <select id="mobile-sort-select" aria-label="Sort players">
+              <option value="displayRank">Rank</option>
+              <option value="currentScore">Score</option>
+              <option value="GP">Games Played</option>
+              <option value="MPG">Minutes (MPG)</option>
+              <option value="ADP">ADP</option>
+              <option value="team">Team</option>
+              <option value="pos">Position</option>
+              <option value="name_full">Player Name</option>
+            </select>
+            <button
+              id="mobile-sort-direction"
+              class="btn-secondary icon-btn"
+              type="button"
+              aria-label="Toggle sort direction"
+              data-direction="asc"
+            >
+              Asc
+            </button>
+          </div>
+        </div>
         <section class="summary" aria-live="polite">
           <div class="summary-row">
             <p id="summary-text">Loading players...</p>
@@ -95,9 +129,12 @@
               </tbody>
             </table>
           </div>
+          <div id="card-list" class="card-list" hidden aria-live="polite"></div>
         </section>
       </main>
     </section>
+
+    <div id="drawer-overlay" class="drawer-overlay" hidden></div>
 
     <div id="tooltip" role="tooltip" hidden></div>
 
