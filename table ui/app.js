@@ -1,15 +1,87 @@
 const CSV_PATH = "../ironmen_rankings.csv";
 const DEFAULT_SORT = { key: "displayRank", direction: "asc" };
 
-const COLUMN_LABELS = {
-  displayRank: "Rank",
-  name_full: "Player",
-  team: "Team",
-  pos: "Position",
-  currentScore: "Score",
-  GP: "Games Played",
-  MPG: "Minutes (MPG)",
-  ADP: "ADP",
+const COLUMN_META = {
+  displayRank: {
+    label: "Rank",
+    tooltip: "Live rank after filters, deletions, and the current sort are applied.",
+  },
+  name_full: {
+    label: "Player",
+    tooltip: "Player name with the current team badge inside the row for quick scanning.",
+  },
+  team: {
+    label: "Team",
+    tooltip: "Latest NBA team abbreviation from the rankings feed.",
+  },
+  pos: {
+    label: "Pos",
+    tooltip: "Eligible fantasy positions supplied by the pipeline output.",
+  },
+  currentScore: {
+    label: "Score",
+    tooltip: "Primary Ironman score for the selected rank basis; higher is better.",
+  },
+  GP: {
+    label: "GP",
+    tooltip: "Regular-season games counted toward the durability model.",
+  },
+  MPG: {
+    label: "MPG",
+    tooltip: "Average minutes per game derived from total minutes divided by games played.",
+  },
+  ADP: {
+    label: "ADP",
+    tooltip: "Yahoo average draft position; shows N/A when a value is unavailable.",
+  },
+  actions: {
+    label: "Actions",
+    tooltip: "Open expanded metrics or delete a player to simulate a draft pick and trigger a re-rank.",
+  },
+};
+
+const COLUMN_LABELS = Object.fromEntries(
+  Object.entries(COLUMN_META).map(([key, meta]) => [key, meta.label])
+);
+
+const TOOLTIP_COPY = {
+  displayRank: COLUMN_META.displayRank.tooltip,
+  currentScore: COLUMN_META.currentScore.tooltip,
+  GP: COLUMN_META.GP.tooltip,
+  MPG: COLUMN_META.MPG.tooltip,
+  ADP: COLUMN_META.ADP.tooltip,
+  actions: COLUMN_META.actions.tooltip,
+  tierTop12: "Currently grades inside the top 12 of the live board.",
+  tierTop25: "Currently grades inside the top 25 of the live board.",
+  tierTop50: "Currently grades inside the top 50 of the live board.",
+  cardRank: "Live rank after applying filters, deletions, and the current sort.",
+  cardGames: COLUMN_META.GP.tooltip,
+  cardMPG: COLUMN_META.MPG.tooltip,
+  cardADP: COLUMN_META.ADP.tooltip,
+  ironmanRank: "Durability-first Ironman rank from the pipeline (lower is better).",
+  goodIronmanRank: "Production-weighted Ironman rank variant (lower is better).",
+  goodScore: "Composite Good Ironman score (higher is better).",
+  ironmanScore: "Composite core Ironman score (higher is better).",
+  durabilityZ: "Z-score measuring availability relative to league peers.",
+  productionZ: "Per-game production z-score.",
+  efficiencyZ: "Shooting efficiency z-score.",
+  minutesZ: "Workload (minutes) z-score.",
+  valueZ: "Value versus draft cost (ADP) z-score.",
+  weightedGP: "Games played weighted toward more recent seasons.",
+  gpMedian: "Median games played across the seasons in the sample.",
+  durabilityComposite: "Combined durability figure after applying penalties.",
+  durabilityPenalty: "Penalty applied for low availability or small sample size.",
+  seasonsUsed: "Seasons that fed into this player's durability and production profile.",
+  pts: "Points per game.",
+  reb: "Rebounds per game.",
+  ast: "Assists per game.",
+  stl: "Steals per game.",
+  blk: "Blocks per game.",
+  fg3m: "3-pointers made per game.",
+  fg3Pct: "3-point percentage.",
+  ftPct: "Free-throw percentage.",
+  tov: "Turnovers per game.",
+  dd2: "Double-doubles per game.",
 };
 
 const RANK_BASIS_LABELS = {
@@ -50,6 +122,8 @@ const MOBILE_MEDIA =
     ? window.matchMedia("(max-width: 768px)")
     : null;
 
+const TEXT_NODE = typeof Node === "function" ? Node.TEXT_NODE : 3;
+
 const state = {
   players: [],
   visiblePlayers: [],
@@ -89,9 +163,12 @@ const elements = {
   mobileSortDirection: document.getElementById("mobile-sort-direction"),
 };
 
+let activeTooltipTarget = null;
+
 document.addEventListener("DOMContentLoaded", init);
 
 async function init() {
+  applyColumnMetadata();
   bindEvents();
   await loadData();
   render();
@@ -139,11 +216,29 @@ function bindEvents() {
       if (!key || key === "actions") return;
       toggleSort(key);
     });
+    header.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      const key = header.dataset.key;
+      if (!key || key === "actions") return;
+      toggleSort(key);
+    });
+    header.addEventListener("mouseover", handleColumnMouseover);
   });
 
   document.addEventListener("mousemove", handleTooltipMove);
   document.addEventListener("mouseover", handleTooltipShow);
   document.addEventListener("mouseout", handleTooltipHide);
+  document.addEventListener("focusin", handleTooltipShow);
+  document.addEventListener("focusout", handleTooltipHide);
+  document.addEventListener(
+    "touchstart",
+    () => {
+      activeTooltipTarget = null;
+      hideTooltip();
+    },
+    { passive: true }
+  );
 
   elements.mobileFilterToggle?.addEventListener("click", () => {
     toggleFilterDrawer();
@@ -174,6 +269,30 @@ function bindEvents() {
   } else {
     handleViewportChange(false);
   }
+}
+
+function applyColumnMetadata() {
+  elements.tableHeaders.forEach((header) => {
+    const key = header.dataset.key;
+    if (!key) return;
+    const meta = COLUMN_META[key];
+    if (!meta) return;
+    header.textContent = meta.label;
+    if (meta.tooltip) {
+      header.setAttribute("data-tooltip", meta.tooltip);
+      header.setAttribute("tabindex", "0");
+    } else {
+      header.removeAttribute("data-tooltip");
+      header.removeAttribute("tabindex");
+    }
+  });
+}
+
+function handleColumnMouseover(event) {
+  const header = event.currentTarget;
+  const key = header.dataset.key || "";
+  const tooltip = header.getAttribute("data-tooltip") || "";
+  console.log("Column mouseover", { key, tooltip });
 }
 
 function handleViewportChange(isMobile) {
@@ -436,18 +555,27 @@ function renderTable() {
     .map((player) => {
       const tierClass = getTierClass(player.displayRank);
       const tierLabel = getTierLabel(player.displayRank);
+      const tierTooltip = getTierTooltip(player.displayRank);
       const isExpanded = state.expanded.has(player.id);
       const detailRowId = `detail-${player.id}`;
       const rowClass = tierClass ? ` class="${tierClass}"` : "";
-      const badge = tierLabel ? `<span class="tier-badge">${tierLabel}</span>` : "";
+      const badge = tierLabel
+        ? `<span class="tier-badge"${buildTooltipAttr(tierTooltip)}>${tierLabel}</span>`
+        : "";
       const expandLabel = isExpanded ? "Hide" : "Details";
       const detailRow = renderDetailRow(player, tierClass, detailRowId, isExpanded);
       const adpDisplay = player.hasAdp ? formatNumber(player.ADP, 1) : "N/A";
+      const scoreTooltipAttr = buildTooltipAttr(TOOLTIP_COPY.currentScore);
+      const gpTooltipAttr = buildTooltipAttr(TOOLTIP_COPY.GP);
+      const mpgTooltipAttr = buildTooltipAttr(TOOLTIP_COPY.MPG);
+      const adpTooltipAttr = buildTooltipAttr(TOOLTIP_COPY.ADP);
+      const rankTooltipAttr = buildTooltipAttr(TOOLTIP_COPY.displayRank);
+      const actionsTooltipAttr = buildTooltipAttr(TOOLTIP_COPY.actions);
 
       return `
         <tr${rowClass}>
           <td>
-            <span class="rank-number">${player.displayRank}</span>
+            <span class="rank-number"${rankTooltipAttr}>${player.displayRank}</span>
             ${badge}
           </td>
           <td>
@@ -458,12 +586,12 @@ function renderTable() {
           </td>
           <td>${player.team ?? ""}</td>
           <td>${player.pos ?? ""}</td>
-          <td>${formatNumber(player.currentScore)}</td>
-          <td>${player.GP}</td>
-          <td>${formatNumber(player.MPG, 1)}</td>
-          <td>${adpDisplay}</td>
+          <td${scoreTooltipAttr}>${formatNumber(player.currentScore)}</td>
+          <td${gpTooltipAttr}>${player.GP}</td>
+          <td${mpgTooltipAttr}>${formatNumber(player.MPG, 1)}</td>
+          <td${adpTooltipAttr}>${adpDisplay}</td>
           <td class="actions">
-            <div class="action-buttons">
+            <div class="action-buttons"${actionsTooltipAttr}>
               <button class="btn-secondary expand-btn" type="button" data-id="${player.id}" aria-expanded="${isExpanded ? "true" : "false"}" aria-controls="${detailRowId}">${expandLabel}</button>
               <button class="delete-btn" type="button" data-id="${player.id}" aria-label="Remove ${player.name_full ?? "this player"} from table">Delete</button>
             </div>
@@ -519,24 +647,30 @@ function renderCards() {
       const mpgDisplay = formatNumber(player.MPG, 1);
       const adpDisplay = player.hasAdp ? formatNumber(player.ADP, 1) : "N/A";
       const subtitle = [player.team, player.pos].filter(Boolean).join(" | ");
+      const tierTooltip = getTierTooltip(player.displayRank);
+      const tierBadge = tierLabel
+        ? ` <span class=\"tier-badge\"${buildTooltipAttr(tierTooltip)}>${tierLabel}</span>`
+        : "";
+      const scoreTooltipAttr = buildTooltipAttr(TOOLTIP_COPY.currentScore);
+      const actionsTooltipAttr = buildTooltipAttr(TOOLTIP_COPY.actions);
 
       return `
         <article class="${cardClasses.join(" ")}" data-id="${player.id}">
           <header class="card-header">
             <div class="card-title">
-              <span class="card-rank">#${player.displayRank}${tierLabel ? ` <span class=\"tier-badge\">${tierLabel}</span>` : ""}</span>
+              <span class="card-rank"${buildTooltipAttr(TOOLTIP_COPY.cardRank)}>#${player.displayRank}${tierBadge}</span>
               <strong>${player.name_full ?? ""}</strong>
               <span class="card-sub">${subtitle}</span>
             </div>
-            <span class="card-score">${scoreDisplay}</span>
+            <span class="card-score"${scoreTooltipAttr}>${scoreDisplay}</span>
           </header>
           <dl class="card-meta">
-            ${cardMetaItem("Rank", player.displayRank)}
-            ${cardMetaItem("Games", gpDisplay)}
-            ${cardMetaItem("MPG", mpgDisplay)}
-            ${cardMetaItem("ADP", adpDisplay)}
+            ${cardMetaItem("Rank", player.displayRank, "cardRank")}
+            ${cardMetaItem("Games", gpDisplay, "cardGames")}
+            ${cardMetaItem("MPG", mpgDisplay, "cardMPG")}
+            ${cardMetaItem("ADP", adpDisplay, "cardADP")}
           </dl>
-          <div class="card-actions">
+          <div class="card-actions"${actionsTooltipAttr}>
             <button class="card-toggle" type="button" data-id="${player.id}" aria-expanded="${isExpanded ? "true" : "false"}" aria-controls="${detailId}">${isExpanded ? "Hide details" : "Show details"}</button>
             <button class="delete-btn" type="button" data-id="${player.id}" aria-label="Remove ${player.name_full ?? "this player"} from the table">Delete</button>
           </div>
@@ -764,41 +898,73 @@ function getTierLabel(rank) {
   return "";
 }
 
+function getTierTooltip(rank) {
+  if (rank <= 12) return TOOLTIP_COPY.tierTop12;
+  if (rank <= 25) return TOOLTIP_COPY.tierTop25;
+  if (rank <= 50) return TOOLTIP_COPY.tierTop50;
+  return "";
+}
+
+function buildTooltipAttr(text) {
+  if (!text) return "";
+  return ` data-tooltip="${escapeAttribute(text)}"`;
+}
+
+function escapeAttribute(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function buildDetailSections(player) {
   const rankingMetrics = [
-    detailMetric("Ironman Rank", formatNumber(player.IronMan_Rank, 0)),
-    detailMetric("Good Ironman Rank", formatNumber(player.Good_IronMan_Rank, 0)),
-    detailMetric("Good Score", formatNumber(player.Good_IronMan_Score)),
-    detailMetric("Ironman Score", formatNumber(player.IronMan_Score)),
+    detailMetric("Ironman Rank", formatNumber(player.IronMan_Rank, 0), "ironmanRank"),
+    detailMetric(
+      "Good Ironman Rank",
+      formatNumber(player.Good_IronMan_Rank, 0),
+      "goodIronmanRank"
+    ),
+    detailMetric("Good Score", formatNumber(player.Good_IronMan_Score), "goodScore"),
+    detailMetric("Ironman Score", formatNumber(player.IronMan_Score), "ironmanScore"),
   ].join("");
 
   const scoreMetrics = [
-    detailMetric("Durability Z", formatNumber(player.DurabilityZ)),
-    detailMetric("Production Z", formatNumber(player.ProductionZ)),
-    detailMetric("Efficiency Z", formatNumber(player.EfficiencyZ)),
-    detailMetric("Minutes Z", formatNumber(player.MinutesZ)),
-    detailMetric("Value Z", formatNumber(player.ValueZ)),
+    detailMetric("Durability Z", formatNumber(player.DurabilityZ), "durabilityZ"),
+    detailMetric("Production Z", formatNumber(player.ProductionZ), "productionZ"),
+    detailMetric("Efficiency Z", formatNumber(player.EfficiencyZ), "efficiencyZ"),
+    detailMetric("Minutes Z", formatNumber(player.MinutesZ), "minutesZ"),
+    detailMetric("Value Z", formatNumber(player.ValueZ), "valueZ"),
   ].join("");
 
   const availabilityMetrics = [
-    detailMetric("Weighted GP", formatNumber(player.Weighted_GP, 1)),
-    detailMetric("GP Median", formatNumber(player.GP_Median, 1)),
-    detailMetric("Durability Composite", formatNumber(player.Durability_Composite)),
-    detailMetric("Durability Penalty", formatNumber(player.Durability_Penalty)),
-    detailMetric("Seasons Used", formatSeasons(player.seasons)),
+    detailMetric("Weighted GP", formatNumber(player.Weighted_GP, 1), "weightedGP"),
+    detailMetric("GP Median", formatNumber(player.GP_Median, 1), "gpMedian"),
+    detailMetric(
+      "Durability Composite",
+      formatNumber(player.Durability_Composite),
+      "durabilityComposite"
+    ),
+    detailMetric(
+      "Durability Penalty",
+      formatNumber(player.Durability_Penalty),
+      "durabilityPenalty"
+    ),
+    detailMetric("Seasons Used", formatSeasons(player.seasons), "seasonsUsed"),
   ].join("");
 
   const perGameMetrics = [
-    detailMetric("PTS", formatNumber(player.PTS_PG, 1)),
-    detailMetric("REB", formatNumber(player.REB_PG, 1)),
-    detailMetric("AST", formatNumber(player.AST_PG, 1)),
-    detailMetric("STL", formatNumber(player.STL_PG, 2)),
-    detailMetric("BLK", formatNumber(player.BLK_PG, 2)),
-    detailMetric("3PM", formatNumber(player.FG3M_PG, 2)),
-    detailMetric("3P%", formatNumber(player.FG3_PCT, 3)),
-    detailMetric("FT%", formatNumber(player.FT_PCT, 3)),
-    detailMetric("TOV", formatNumber(player.TOV_PG, 2)),
-    detailMetric("DD2", formatNumber(player.DD2_PG, 2)),
+    detailMetric("PTS", formatNumber(player.PTS_PG, 1), "pts"),
+    detailMetric("REB", formatNumber(player.REB_PG, 1), "reb"),
+    detailMetric("AST", formatNumber(player.AST_PG, 1), "ast"),
+    detailMetric("STL", formatNumber(player.STL_PG, 2), "stl"),
+    detailMetric("BLK", formatNumber(player.BLK_PG, 2), "blk"),
+    detailMetric("3PM", formatNumber(player.FG3M_PG, 2), "fg3m"),
+    detailMetric("3P%", formatNumber(player.FG3_PCT, 3), "fg3Pct"),
+    detailMetric("FT%", formatNumber(player.FT_PCT, 3), "ftPct"),
+    detailMetric("TOV", formatNumber(player.TOV_PG, 2), "tov"),
+    detailMetric("DD2", formatNumber(player.DD2_PG, 2), "dd2"),
   ].join("");
 
   return {
@@ -850,15 +1016,17 @@ function renderDetailRow(player, tierClass, detailRowId, isExpanded) {
         </tr>`;
 }
 
-function cardMetaItem(label, value) {
+function cardMetaItem(label, value, tooltipKey) {
   const cleanValue = value === undefined || value === null || value === "" ? "-" : value;
   const display = cleanValue === "NaN" ? "-" : cleanValue;
-  return `<div><dt>${label}</dt><dd>${display}</dd></div>`;
+  const tooltip = tooltipKey ? TOOLTIP_COPY[tooltipKey] : "";
+  return `<div${buildTooltipAttr(tooltip)}><dt>${label}</dt><dd>${display}</dd></div>`;
 }
 
-function detailMetric(label, value) {
+function detailMetric(label, value, tooltipKey) {
   const display = value === undefined || value === null || value === "" ? "-" : value;
-  return `<div class="metric"><dt>${label}</dt><dd>${display}</dd></div>`;
+  const tooltip = tooltipKey ? TOOLTIP_COPY[tooltipKey] : "";
+  return `<div class="metric"${buildTooltipAttr(tooltip)}><dt>${label}</dt><dd>${display}</dd></div>`;
 }
 
 function formatSeasons(seasons) {
@@ -894,37 +1062,83 @@ function pruneExpanded(players) {
 }
 
 function handleTooltipShow(event) {
+  if (!elements.tooltip) return;
   const target = findTooltipTarget(event.target);
   if (!target) return;
-  const text = target.dataset.tooltip;
+  const text = target.getAttribute("data-tooltip");
   if (!text) return;
+  activeTooltipTarget = target;
   elements.tooltip.textContent = text;
   elements.tooltip.hidden = false;
-  positionTooltip(event);
+  elements.tooltip.setAttribute("aria-hidden", "false");
+  elements.tooltip.classList.add("is-visible");
+  const pointerEvent =
+    typeof MouseEvent === "function" && event instanceof MouseEvent ? event : null;
+  positionTooltip(pointerEvent, target);
 }
 
 function handleTooltipHide(event) {
+  if (!elements.tooltip) return;
   const current = findTooltipTarget(event.target);
   const next = findTooltipTarget(event.relatedTarget);
   if (current && next === current) return;
-  elements.tooltip.hidden = true;
+  activeTooltipTarget = null;
+  hideTooltip();
 }
 
 function handleTooltipMove(event) {
-  if (elements.tooltip.hidden) return;
-  positionTooltip(event);
+  if (!elements.tooltip || !activeTooltipTarget) return;
+  positionTooltip(event, activeTooltipTarget);
 }
 
-function positionTooltip(event) {
+function hideTooltip() {
+  if (!elements.tooltip) return;
+  elements.tooltip.classList.remove("is-visible");
+  elements.tooltip.setAttribute("aria-hidden", "true");
+  elements.tooltip.hidden = true;
+  elements.tooltip.textContent = "";
+  elements.tooltip.style.transform = "translate(-9999px, -9999px)";
+  elements.tooltip.style.removeProperty("--tooltip-arrow-x");
+}
+
+function positionTooltip(mouseEvent, target) {
+  if (!elements.tooltip) return;
   const padding = 16;
+  let anchorX = padding;
+  let anchorY = padding;
+
+  if (mouseEvent && typeof mouseEvent.clientX === "number" && typeof mouseEvent.clientY === "number") {
+    anchorX = mouseEvent.clientX;
+    anchorY = mouseEvent.clientY;
+  } else if (target && typeof target.getBoundingClientRect === "function") {
+    const rect = target.getBoundingClientRect();
+    anchorX = rect.left + rect.width / 2;
+    anchorY = rect.bottom;
+  }
+
   const tooltipRect = elements.tooltip.getBoundingClientRect();
+  const rawX = anchorX - tooltipRect.width / 2;
+  const rawY = anchorY + padding;
   const maxX = window.innerWidth - tooltipRect.width - padding;
   const maxY = window.innerHeight - tooltipRect.height - padding;
-  const x = Math.min(maxX, event.clientX + padding);
-  const y = Math.min(maxY, event.clientY + padding);
-  elements.tooltip.style.transform = `translate(${x}px, ${y}px)`;
+
+  const clampedX = Math.min(Math.max(padding, rawX), Math.max(padding, maxX));
+  const clampedY = Math.min(Math.max(padding, rawY), Math.max(padding, maxY));
+
+  const pointerOffset = anchorX - clampedX;
+  const arrowOffset = Math.min(
+    Math.max(12, pointerOffset),
+    tooltipRect.width - 12
+  );
+  elements.tooltip.style.setProperty("--tooltip-arrow-x", `${arrowOffset}px`);
+  elements.tooltip.style.transform = `translate(${clampedX}px, ${clampedY}px)`;
 }
 
 function findTooltipTarget(element) {
-  return element ? element.closest("[data-tooltip]") : null;
+  if (!element) return null;
+  if (element.nodeType === TEXT_NODE) {
+    element = element.parentElement;
+  }
+  if (!element || typeof element.closest !== "function") return null;
+  return element.closest("[data-tooltip]");
 }

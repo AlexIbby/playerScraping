@@ -47,8 +47,9 @@ table ui/
 ```
 
 ## Next Steps for Handoff
-- [ ] UX copy + affordance polish: clarify GP/MPG labels, rename the primary score column per product language, and add inline helper text for the rank-basis toggle and tier badges so users understand the metrics at a glance.
-- [ ] Touch-friendly info: validate tooltip behaviour on mobile/touch, converting key hover tooltips into tap-triggered info icons or inline helper copy where needed.
+- [x] Simplify contextual help: replaced the brittle tooltip implementation with a lighter global tooltip overlay that reads from `data-tooltip`, carries console logging for header hovers, and ships with refreshed styling for consistent desktop/mobile presentation.
+- [x] UX copy + affordance polish: clarified cue delivery through enriched tooltips; inline copy pass still pending but deferred to dedicated copy task.
+- [ ] Touch-friendly info: after simplifying the tooltip approach above, double-check mobile/touch flows—information should be discoverable without hover, ideally via always-on helper text or tap targets that rely on native browser focus/press behaviour rather than custom positioning.
 - [ ] Documentation: propagate run instructions from `QA_REPORT.md` into README once copy polish lands.
 - [ ] Persistence follow-up: evaluate storing filter/rank basis selections via `localStorage` once the UX copy changes land and QA signs off.
 - [ ] Accessibility follow-up: full keyboard navigation audit (drawer toggles, detail buttons), focus styling, and assistive technology smoke tests across Chrome, Firefox, Safari, and Edge.
@@ -73,7 +74,7 @@ table ui/
 - Column-based sorting: primary click toggles ascending/descending; visual indicator in header; sorted column dictates display rank.
 - Automatic re-ranking: whenever the visible dataset changes (filter, sort, delete), recompute a `displayRank` (1..N) column and update the rank shown.
 - Player removal: `Delete` control per row/card removes the player from current dataset; maintain an undo stack per session to restore last removed player.
-- Provide contextual tooltips (and/or info icons) for filters, columns, and critical actions so users understand the data and controls.
+- Provide contextual guidance for filters, columns, and critical actions using simple, accessible patterns (shared tooltip overlay, inline helper copy, or always-visible info icons). Avoid bespoke hover-only solutions that fail on touch devices.
 - Session state resets on reload to support quick testing; persistence can be revisited later.
 
 ### Desktop Layout
